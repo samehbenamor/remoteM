@@ -77,6 +77,39 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Handle double-click (NEW FEATURE)
+  socket.on('mouse-double-click', () => {
+    try {
+      console.log('🖱️ Double-click at position:', robot.getMousePos());
+      robot.mouseClick('left', true); // true parameter for double-click
+      
+    } catch (error) {
+      console.error('❌ Error double-clicking:', error.message);
+    }
+  });
+
+  // Handle screen toggle - wake/sleep (NEW FEATURE)
+  socket.on('screen-toggle', () => {
+    try {
+      console.log('💻 Toggling screen power');
+      
+      // Cross-platform screen control
+      if (process.platform === 'win32') {
+        // Windows: Turn off monitor using Windows+L (lock) or monitor off
+        robot.keyTap('l', ['cmd']);
+      } else if (process.platform === 'darwin') {
+        // macOS: Put display to sleep
+        robot.keyTap('q', ['control', 'shift']);
+      } else {
+        // Linux: Lock screen
+        robot.keyTap('l', ['control', 'alt']);
+      }
+      
+    } catch (error) {
+      console.error('❌ Error toggling screen:', error.message);
+    }
+  });
+
   // Handle mouse scrolling
   socket.on('mouse-scroll', (data) => {
     try {
@@ -143,7 +176,9 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('\n🎯 Supported events:');
   console.log('   • mouse-move: { dx, dy }');
   console.log('   • mouse-click: "left" | "right" | "middle"');
+  console.log('   • mouse-double-click: (no data)');
   console.log('   • mouse-scroll: { direction, delta }');
+  console.log('   • screen-toggle: (no data)');
   console.log('================================\n');
 });
 
