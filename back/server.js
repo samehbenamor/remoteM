@@ -77,7 +77,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Handle double-click (NEW FEATURE)
+  // Handle double-click
   socket.on('mouse-double-click', () => {
     try {
       console.log('🖱️ Double-click at position:', robot.getMousePos());
@@ -88,7 +88,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Handle screen toggle - wake/sleep (NEW FEATURE)
+  // Handle screen toggle - wake/sleep
   socket.on('screen-toggle', () => {
     try {
       console.log('💻 Toggling screen power');
@@ -123,6 +123,136 @@ io.on('connection', (socket) => {
       
     } catch (error) {
       console.error('❌ Error scrolling:', error.message);
+    }
+  });
+
+  // Handle keyboard input (NEW FEATURE)
+socket.on('keyboard-type', (data) => {
+  try {
+    const { text } = data;
+    console.log(`⌨️ Typing text: "${text}"`);
+    
+    // First simulate a click to ensure focus
+    const currentPos = robot.getMousePos();
+    robot.mouseClick('left');
+    robot.moveMouse(currentPos.x, currentPos.y);
+    
+    // Then type the text as a complete string
+    robot.typeStringDelayed(text, 0); // 0 delay for immediate typing
+    
+  } catch (error) {
+    console.error('❌ Error typing text:', error.message);
+  }
+});
+
+  // Handle special keys (NEW FEATURE)
+  socket.on('keyboard-key', (data) => {
+    try {
+      const { key, modifiers = [] } = data;
+      console.log(`⌨️ Key press: ${key} with modifiers: [${modifiers.join(', ')}]`);
+      
+      // Convert modifiers to robotjs format
+      const robotModifiers = modifiers.map(mod => {
+        switch (mod.toLowerCase()) {
+          case 'ctrl': return 'control';
+          case 'cmd': return 'command';
+          case 'alt': return 'alt';
+          case 'shift': return 'shift';
+          default: return mod;
+        }
+      });
+      
+      robot.keyTap(key, robotModifiers);
+      
+    } catch (error) {
+      console.error('❌ Error pressing key:', error.message);
+    }
+  });
+
+  // Handle volume control (NEW FEATURE)
+  socket.on('volume-control', (data) => {
+    try {
+      const { action, amount = 1 } = data;
+      console.log(`🔊 Volume ${action} by ${amount}`);
+      
+      // Cross-platform volume control
+      if (process.platform === 'win32') {
+        // Windows volume control
+        switch (action) {
+          case 'up':
+            for (let i = 0; i < amount; i++) {
+              robot.keyTap('audio_vol_up');
+            }
+            break;
+          case 'down':
+            for (let i = 0; i < amount; i++) {
+              robot.keyTap('audio_vol_down');
+            }
+            break;
+          case 'mute':
+            robot.keyTap('audio_mute');
+            break;
+        }
+      } else if (process.platform === 'darwin') {
+        // macOS volume control
+        switch (action) {
+          case 'up':
+            for (let i = 0; i < amount; i++) {
+              robot.keyTap('f12'); // Volume up on Mac
+            }
+            break;
+          case 'down':
+            for (let i = 0; i < amount; i++) {
+              robot.keyTap('f11'); // Volume down on Mac
+            }
+            break;
+          case 'mute':
+            robot.keyTap('f10'); // Mute on Mac
+            break;
+        }
+      } else {
+        // Linux volume control (using amixer command simulation)
+        switch (action) {
+          case 'up':
+            robot.keyTap('audio_vol_up');
+            break;
+          case 'down':
+            robot.keyTap('audio_vol_down');
+            break;
+          case 'mute':
+            robot.keyTap('audio_mute');
+            break;
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ Error controlling volume:', error.message);
+    }
+  });
+
+  // Handle media controls (BONUS FEATURE)
+  socket.on('media-control', (data) => {
+    try {
+      const { action } = data;
+      console.log(`🎵 Media ${action}`);
+      
+      switch (action) {
+        case 'play-pause':
+          robot.keyTap('audio_play');
+          break;
+        case 'next':
+          robot.keyTap('audio_next');
+          break;
+        case 'previous':
+          robot.keyTap('audio_prev');
+          break;
+        case 'stop':
+          robot.keyTap('audio_stop');
+          break;
+      }
+      
+    } catch (error) {
+      console.error('❌ Error controlling media:', error.message);
     }
   });
 
@@ -179,6 +309,10 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('   • mouse-double-click: (no data)');
   console.log('   • mouse-scroll: { direction, delta }');
   console.log('   • screen-toggle: (no data)');
+  console.log('   • keyboard-type: { text }');
+  console.log('   • keyboard-key: { key, modifiers }');
+  console.log('   • volume-control: { action, amount }');
+  console.log('   • media-control: { action }');
   console.log('================================\n');
 });
 

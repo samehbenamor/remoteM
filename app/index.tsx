@@ -11,6 +11,11 @@ import {
   Dimensions,
   StatusBar,
   Animated,
+  TextInput,
+  Modal,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native"
 import { io, type Socket } from "socket.io-client"
 import { LinearGradient } from "expo-linear-gradient"
@@ -29,6 +34,13 @@ export default function Index() {
   const [showSettings, setShowSettings] = useState(false)
   const [shakeEnabled, setShakeEnabled] = useState(true)
 
+  // Keyboard states
+  const [showKeyboard, setShowKeyboard] = useState(false)
+  const [keyboardText, setKeyboardText] = useState("")
+
+  // Volume states
+  const [showVolumePanel, setShowVolumePanel] = useState(false)
+
   const connectionAnimation = useRef(new Animated.Value(0)).current
   const buttonPressAnimation = useRef(new Animated.Value(1)).current
 
@@ -36,7 +48,7 @@ export default function Index() {
   const lastPosition = useRef({ x: 0, y: 0 })
   const isFirstMove = useRef(true)
 
-  // Tap detection for trackpad - Fixed TypeScript types
+  // Tap detection for trackpad
   const lastTapTime = useRef(0)
   const tapTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hasMoved = useRef(false)
@@ -193,7 +205,40 @@ export default function Index() {
     }
   }, [socket])
 
-  // Enhanced pan responder - FIXED to handle both movement and gestures
+  // Keyboard functions - reverted to original behavior
+  const sendText = () => {
+    if (socket && isConnected && keyboardText.trim()) {
+      socket.emit("keyboard-type", { text: keyboardText })
+      setKeyboardText("")
+    }
+  }
+
+  // Handle Enter key press in TextInput
+  const handleSubmitEditing = () => {
+    sendText()
+  }
+
+  const sendSpecialKey = (key: string, modifiers: string[] = []) => {
+    if (socket && isConnected) {
+      socket.emit("keyboard-key", { key, modifiers })
+    }
+  }
+
+  // Volume control functions
+  const handleVolumeControl = (action: string, amount = 1) => {
+    if (socket && isConnected) {
+      socket.emit("volume-control", { action, amount })
+    }
+  }
+
+  // Media control functions
+  const handleMediaControl = (action: string) => {
+    if (socket && isConnected) {
+      socket.emit("media-control", { action })
+    }
+  }
+
+  // Enhanced pan responder
   const panResponder = PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: () => true,
@@ -224,7 +269,6 @@ export default function Index() {
       }
     },
     onPanResponderMove: (evt, gestureState) => {
-      // Skip if this was a two-finger gesture
       if (evt.nativeEvent.touches.length > 1) return
 
       hasMoved.current = true
@@ -258,30 +302,24 @@ export default function Index() {
       }
     },
     onPanResponderRelease: (evt) => {
-      // Skip tap detection if this was a multi-finger gesture
       if (evt.nativeEvent.touches.length > 0) return
 
       isFirstMove.current = true
 
-      // Handle tap detection (only if no movement occurred and single finger)
       if (!hasMoved.current && socket && isConnected) {
         const now = Date.now()
         const timeSinceLastTap = now - lastTapTime.current
 
-        // Check for double-tap (within 300ms)
         if (timeSinceLastTap < 300) {
-          // Double-tap detected - send double-click
           if (tapTimeout.current) {
             clearTimeout(tapTimeout.current)
             tapTimeout.current = null
           }
           socket.emit("mouse-double-click")
-          lastTapTime.current = 0 // Reset to prevent triple-tap
+          lastTapTime.current = 0
         } else {
-          // Single tap - wait to see if there's a second tap
           lastTapTime.current = now
           tapTimeout.current = setTimeout(() => {
-            // Single tap confirmed - send left click
             if (socket && isConnected) {
               socket.emit("mouse-click", "left")
             }
@@ -309,7 +347,7 @@ export default function Index() {
     },
   })
 
-  // Handle mouse clicks with animation (NO VIBRATION)
+  // Handle mouse clicks with animation
   const handleClick = (button: "left" | "right" | "middle") => {
     if (socket && isConnected) {
       Animated.sequence([
@@ -336,7 +374,7 @@ export default function Index() {
         {
           backgroundColor: connectionAnimation.interpolate({
             inputRange: [0, 1],
-            outputRange: ["#ff6b6b", "#51cf66"],
+            outputRange: ["#ef4444", "#10b981"],
           }),
         },
       ]}
@@ -349,15 +387,23 @@ export default function Index() {
   )
 
   return (
-    <LinearGradient colors={["#667eea", "#764ba2"]} style={styles.container}>
+    <LinearGradient colors={["#111827", "#1f2937", "#374151"]} style={styles.container}>
       <StatusBar barStyle="light-content" />
 
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Remote Mouse</Text>
-        <TouchableOpacity onPress={() => setShowSettings(!showSettings)} style={styles.settingsButton}>
-          <Ionicons name="settings-outline" size={24} color="white" />
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity onPress={() => setShowKeyboard(true)} style={styles.headerButton}>
+            <Ionicons name="keypad-outline" size={20} color="#e5e7eb" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setShowVolumePanel(true)} style={styles.headerButton}>
+            <Ionicons name="volume-high-outline" size={20} color="#e5e7eb" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setShowSettings(!showSettings)} style={styles.headerButton}>
+            <Ionicons name="settings-outline" size={20} color="#e5e7eb" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ConnectionStatus />
@@ -428,12 +474,12 @@ export default function Index() {
         </View>
       )}
 
-      {/* Mouse Pad Area - FIXED: Only one PanResponder */}
+      {/* Mouse Pad Area */}
       <View style={styles.mousePadContainer}>
         <Text style={styles.mousePadLabel}>Trackpad</Text>
         <View style={styles.mousePad} {...panResponder.panHandlers}>
           <View style={styles.mousePadIndicator}>
-            <Ionicons name="finger-print" size={40} color="#ffffff40" />
+            <Ionicons name="finger-print" size={40} color="#6b7280" />
             <Text style={styles.mousePadText}>
               Tap to click • Double-tap to double-click{"\n"}Two fingers to right-click
             </Text>
@@ -445,17 +491,9 @@ export default function Index() {
       <View style={styles.scrollContainer}>
         <Text style={styles.scrollLabel}>Scroll Zone</Text>
         <View style={styles.scrollArea} {...scrollResponder.panHandlers}>
-          <Ionicons name="swap-vertical" size={24} color="#ffffff60" />
+          <Ionicons name="swap-vertical" size={24} color="#9ca3af" />
           <Text style={styles.scrollText}>Swipe to scroll</Text>
         </View>
-      </View>
-
-      {/* Creative Features Info */}
-      <View style={styles.featuresContainer}>
-        <Text style={styles.featuresText}>
-          🎯 Tap trackpad to click • 🖱️ Double-tap for double-click • 👆 Two fingers for right-click •{" "}
-          {shakeEnabled ? "📳 Shake to wake/sleep" : "📳 Shake disabled"}
-        </Text>
       </View>
 
       {/* Mouse Buttons */}
@@ -487,6 +525,118 @@ export default function Index() {
           <Text style={styles.buttonText}>Right</Text>
         </TouchableOpacity>
       </Animated.View>
+
+      {/* Keyboard Modal with KeyboardAvoidingView */}
+      <Modal visible={showKeyboard} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          style={styles.keyboardAvoidingView}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 0 :0}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.keyboardModal, Platform.OS === 'android' && styles.androidKeyboardModal]}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Virtual Keyboard</Text>
+                <TouchableOpacity onPress={() => setShowKeyboard(false)}>
+                  <Ionicons name="close" size={24} color="#e5e7eb" />
+                </TouchableOpacity>
+              </View>
+              <TextInput
+                style={styles.keyboardInput}
+                value={keyboardText}
+                onChangeText={setKeyboardText}
+                placeholder="Type here..."
+                placeholderTextColor="#6b7280"
+                multiline
+                autoFocus
+                returnKeyType="send"
+                onSubmitEditing={handleSubmitEditing}
+                blurOnSubmit={false}
+              />
+
+              <TouchableOpacity
+                style={[styles.sendButton, !keyboardText.trim() && styles.sendButtonDisabled]}
+                onPress={sendText}
+                disabled={!keyboardText.trim()}
+              >
+                <Ionicons name="send" size={20} color="white" />
+                <Text style={styles.sendButtonText}>Send Text</Text>
+              </TouchableOpacity>
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.specialKeysContainer}>
+                <TouchableOpacity style={styles.specialKey} onPress={() => sendSpecialKey("enter")}>
+                  <Text style={styles.specialKeyText}>Enter</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.specialKey} onPress={() => sendSpecialKey("backspace")}>
+                  <Text style={styles.specialKeyText}>⌫</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.specialKey} onPress={() => sendSpecialKey("tab")}>
+                  <Text style={styles.specialKeyText}>Tab</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.specialKey} onPress={() => sendSpecialKey("escape")}>
+                  <Text style={styles.specialKeyText}>Esc</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.specialKey} onPress={() => sendSpecialKey("c", ["ctrl"])}>
+                  <Text style={styles.specialKeyText}>Ctrl+C</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.specialKey} onPress={() => sendSpecialKey("v", ["ctrl"])}>
+                  <Text style={styles.specialKeyText}>Ctrl+V</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.specialKey} onPress={() => sendSpecialKey("z", ["ctrl"])}>
+                  <Text style={styles.specialKeyText}>Ctrl+Z</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Volume Modal */}
+      <Modal visible={showVolumePanel} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.volumeModal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Volume & Media Control</Text>
+              <TouchableOpacity onPress={() => setShowVolumePanel(false)}>
+                <Ionicons name="close" size={24} color="#e5e7eb" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.volumeControls}>
+              <Text style={styles.sectionTitle}>Volume</Text>
+              <View style={styles.volumeButtons}>
+                <TouchableOpacity style={styles.volumeButton} onPress={() => handleVolumeControl("down", 3)}>
+                  <Ionicons name="volume-low" size={24} color="#e5e7eb" />
+                  <Text style={styles.volumeButtonText}>Volume Down</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.volumeButton} onPress={() => handleVolumeControl("mute")}>
+                  <Ionicons name="volume-mute" size={24} color="#e5e7eb" />
+                  <Text style={styles.volumeButtonText}>Mute</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.volumeButton} onPress={() => handleVolumeControl("up", 3)}>
+                  <Ionicons name="volume-high" size={24} color="#e5e7eb" />
+                  <Text style={styles.volumeButtonText}>Volume Up</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.mediaControls}>
+              <Text style={styles.sectionTitle}>Media Controls</Text>
+              <View style={styles.mediaButtons}>
+                <TouchableOpacity style={styles.mediaButton} onPress={() => handleMediaControl("previous")}>
+                  <Ionicons name="play-skip-back" size={24} color="#e5e7eb" />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.mediaButton} onPress={() => handleMediaControl("play-pause")}>
+                  <Ionicons name="play" size={24} color="#e5e7eb" />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.mediaButton} onPress={() => handleMediaControl("next")}>
+                  <Ionicons name="play-skip-forward" size={24} color="#e5e7eb" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </LinearGradient>
   )
 }
@@ -506,10 +656,18 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: "bold",
-    color: "white",
+    color: "#f9fafb",
   },
-  settingsButton: {
+  headerButtons: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  headerButton: {
     padding: 8,
+    backgroundColor: "#374151",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#4b5563",
   },
   statusContainer: {
     flexDirection: "row",
@@ -528,29 +686,31 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   settingsPanel: {
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    backgroundColor: "#1f2937",
     marginHorizontal: 20,
     borderRadius: 15,
     padding: 20,
     marginBottom: 20,
+    borderWidth: 1,
+    borderColor: "#374151",
   },
   settingsTitle: {
     fontSize: 20,
     fontWeight: "bold",
-    color: "white",
+    color: "#f9fafb",
     marginBottom: 15,
   },
   inputGroup: {
     marginBottom: 15,
   },
   label: {
-    color: "white",
+    color: "#e5e7eb",
     fontSize: 16,
     fontWeight: "600",
     marginBottom: 4,
   },
   subLabel: {
-    color: "rgba(255, 255, 255, 0.7)",
+    color: "#9ca3af",
     fontSize: 12,
     marginBottom: 8,
   },
@@ -559,18 +719,21 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   sensitivityButton: {
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    backgroundColor: "#374151",
     width: 45,
     height: 40,
     borderRadius: 20,
     justifyContent: "center",
     alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#4b5563",
   },
   sensitivityButtonActive: {
-    backgroundColor: "rgba(255, 255, 255, 0.4)",
+    backgroundColor: "#3b82f6",
+    borderColor: "#2563eb",
   },
   sensitivityText: {
-    color: "white",
+    color: "#e5e7eb",
     fontWeight: "600",
     fontSize: 12,
   },
@@ -588,12 +751,15 @@ const styles = StyleSheet.create({
     width: 50,
     height: 30,
     borderRadius: 15,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    backgroundColor: "#374151",
     justifyContent: "center",
     padding: 2,
+    borderWidth: 1,
+    borderColor: "#4b5563",
   },
   toggleActive: {
-    backgroundColor: "rgba(81, 207, 102, 0.8)",
+    backgroundColor: "#10b981",
+    borderColor: "#059669",
   },
   toggleIndicator: {
     width: 26,
@@ -605,7 +771,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   connectButton: {
-    backgroundColor: "#51cf66",
+    backgroundColor: "#10b981",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -613,7 +779,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   disconnectButton: {
-    backgroundColor: "#ff6b6b",
+    backgroundColor: "#ef4444",
   },
   connectButtonText: {
     color: "white",
@@ -627,7 +793,7 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   mousePadLabel: {
-    color: "white",
+    color: "#e5e7eb",
     fontSize: 16,
     fontWeight: "600",
     marginBottom: 10,
@@ -635,18 +801,18 @@ const styles = StyleSheet.create({
   },
   mousePad: {
     flex: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    backgroundColor: "#1f2937",
     borderRadius: 15,
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 2,
-    borderColor: "rgba(255, 255, 255, 0.2)",
+    borderColor: "#374151",
   },
   mousePadIndicator: {
     alignItems: "center",
   },
   mousePadText: {
-    color: "rgba(255, 255, 255, 0.7)",
+    color: "#9ca3af",
     fontSize: 12,
     marginTop: 10,
     textAlign: "center",
@@ -657,39 +823,26 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   scrollLabel: {
-    color: "white",
+    color: "#e5e7eb",
     fontSize: 14,
     fontWeight: "600",
     marginBottom: 8,
     textAlign: "center",
   },
   scrollArea: {
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    backgroundColor: "#1f2937",
     height: 60,
     borderRadius: 10,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
+    borderColor: "#374151",
   },
   scrollText: {
-    color: "rgba(255, 255, 255, 0.6)",
+    color: "#9ca3af",
     fontSize: 12,
     marginLeft: 8,
-  },
-  featuresContainer: {
-    marginHorizontal: 20,
-    marginBottom: 15,
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
-    borderRadius: 10,
-    padding: 12,
-  },
-  featuresText: {
-    color: "rgba(255, 255, 255, 0.8)",
-    fontSize: 11,
-    textAlign: "center",
-    lineHeight: 14,
   },
   buttonContainer: {
     flexDirection: "row",
@@ -710,10 +863,10 @@ const styles = StyleSheet.create({
     shadowRadius: 3.84,
   },
   leftButton: {
-    backgroundColor: "#4c6ef5",
+    backgroundColor: "#3b82f6",
   },
   middleButton: {
-    backgroundColor: "#7c3aed",
+    backgroundColor: "#8b5cf6",
   },
   rightButton: {
     backgroundColor: "#f59e0b",
@@ -724,4 +877,161 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 5,
   },
+  keyboardAvoidingView: {
+    flex: 1,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.8)",
+    justifyContent: "flex-end",
+  },
+  keyboardModal: {
+    backgroundColor: "#1f2937",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: "70%",
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: "#374151",
+  },
+  volumeModal: {
+    backgroundColor: "#1f2937",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: "50%",
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: "#374151",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#f9fafb",
+  },
+  keyboardInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#1e3a8a",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginBottom: 15,
+  },
+  keyboardInfoText: {
+    color: "#dbeafe",
+    fontSize: 14,
+    marginLeft: 8,
+    fontWeight: "500",
+  },
+  keyboardInput: {
+    backgroundColor: "#374151",
+    borderRadius: 10,
+    padding: 15,
+    color: "#f9fafb",
+    fontSize: 16,
+    minHeight: 100,
+    textAlignVertical: "top",
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: "#4b5563",
+  },
+  sendButton: {
+    backgroundColor: "#10b981",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 15,
+    borderRadius: 10,
+    marginBottom: 15,
+  },
+  sendButtonDisabled: {
+    backgroundColor: "#6b7280",
+    opacity: 0.6,
+  },
+  sendButtonText: {
+    color: "white",
+    fontWeight: "bold",
+    fontSize: 16,
+    marginLeft: 8,
+  },
+  specialKeysContainer: {
+    flexDirection: "row",
+  },
+  specialKey: {
+    backgroundColor: "#374151",
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: "#4b5563",
+  },
+  
+  specialKeyText: {
+    color: "#e5e7eb",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  volumeControls: {
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#f9fafb",
+    marginBottom: 15,
+    textAlign: "center",
+  },
+  volumeButtons: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+  },
+  volumeButton: {
+    backgroundColor: "#374151",
+    paddingVertical: 15,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    alignItems: "center",
+    flex: 1,
+    marginHorizontal: 5,
+    borderWidth: 1,
+    borderColor: "#4b5563",
+  },
+  volumeButtonText: {
+    color: "#e5e7eb",
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 5,
+  },
+  mediaControls: {
+    marginBottom: 10,
+  },
+  mediaButtons: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+  },
+  mediaButton: {
+    backgroundColor: "#374151",
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#4b5563",
+  },
+
+androidKeyboardModal: {
+  marginBottom: 20, // Add some margin for Android
+},
 })
